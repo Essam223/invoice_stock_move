@@ -63,6 +63,53 @@ class InvoiceStockMove(models.Model):
         track_visibility='onchange', copy=False)
 
     @api.multi
+    def action_stock_receive_from_customer(self):
+        pick = {
+            'picking_type_id': self.picking_transfer_id.id,
+            'partner_id': self.partner_id.id,
+            'origin': self.number,
+            # 'location_id': self.picking_transfer_id.default_location_dest_id.id,
+            # 'location_dest_id': self.partner_id.property_stock_customer.id
+            'location_dest_id': self.env.ref("stock.stock_location_stock").id,
+            'location_id': self.env.ref("stock.stock_location_locations_partner").id
+        }
+        self.action_stock_receive(pick)
+
+    @api.multi
+    def action_stock_receive_from_vendor(self):
+        pick = {
+            'picking_type_id': self.picking_type_id.id,
+            'partner_id': self.partner_id.id,
+            'origin': self.number,
+            'location_dest_id': self.picking_type_id.default_location_dest_id.id,
+            'location_id': self.partner_id.property_stock_supplier.id
+        }
+        self.action_stock_receive(pick)
+
+    @api.multi
+    def action_stock_receive_customer(self):
+        for order in self:
+            if not order.invoice_line_ids:
+                raise UserError(_('Please create some invoice lines.'))
+            if not self.number:
+                raise UserError(_('Please Validate invoice.'))
+            if not self.invoice_picking_id:
+                pick = {
+                    'picking_type_id': self.picking_transfer_id.id,
+                    'partner_id': self.partner_id.id,
+                    'origin': self.number,
+                    'location_dest_id': self.picking_transfer_id.default_location_dest_id.id,
+                    'location_id': self.partner_id.property_stock_customer.id
+                }
+                picking = self.env['stock.picking'].create(pick)
+                self.invoice_picking_id = picking.id
+                self.picking_count = len(picking)
+                moves = order.invoice_line_ids.filtered(
+                    lambda r: r.product_id.type in ['product', 'consu'])._create_stock_moves(picking)
+                move_ids = moves._action_confirm()
+                move_ids._action_assign()
+
+    @api.multi
     def action_stock_receive(self):
         for order in self:
             if not order.invoice_line_ids:
